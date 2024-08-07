@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Signing</title>
+    <style>
+        * { font-family: sans-serif; }
+        body { background: linear-gradient(312deg, #364960, #81848c); display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        #app { background: #fff; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px #00000077; text-align: center; width: 850px; }
+        #signatureBox { width: 800px; height: 480px; border: 2px dashed #ccc; margin: 20px 0; position: relative; }
+        #signature { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        button { background: #1e1e1e; border: 1px solid #4c4c4c; padding: 5px 10px; color: #d9d9d9; border-radius: 8px; cursor: pointer; margin: 3px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>Web Signing with Wacom</h1>
+        <div id="signatureBox">
+            <canvas id="signature"></canvas>
+        </div>
+        <button onclick="saveSignature()">Save Signature</button>
+        <button onclick="clearSignature()">Clear Signature</button>
+    </div>
+
+    <script src="wacomstu540.js"></script>
+    <script>
+        var wacom = new wacomstu540();
+        var signatureCanvas = document.getElementById('signature');
+        var signatureContext = signatureCanvas.getContext('2d');
+        var isDrawing = false;
+
+        signatureCanvas.width = 800;
+        signatureCanvas.height = 480;
+
+        async function connect() {
+            if (await wacom.connect()) {
+                await wacom.clearScreen();
+                await wacom.setPenColorAndWidth('#000000', 2);
+                await wacom.setWritingMode(1);
+                await wacom.setWritingArea({ x1: 0, y1: 0, x2: 800, y2: 480 });
+                await wacom.setInking(true);
+                wacom.onPenData(function (pen) {
+                    drawSignature(pen.press > 0, pen.cx, pen.cy, pen.press);
+                });
+            }
+        }
+
+        function drawSignature(isDrawing, x, y, pressure) {
+            if (isDrawing) {
+                signatureContext.lineWidth = pressure * 2;
+                signatureContext.lineCap = 'round';
+                signatureContext.strokeStyle = '#000000';
+                signatureContext.lineTo(x, y);
+                signatureContext.stroke();
+                signatureContext.beginPath();
+                signatureContext.moveTo(x, y);
+            } else {
+                signatureContext.beginPath();
+            }
+        }
+
+        document.getElementById('signatureBox').addEventListener('mousedown', async function () {
+            await connect();
+        });
+
+        function saveSignature() {
+            var date = new Date().toLocaleString();
+            signatureContext.font = "20px Arial";
+            signatureContext.fillStyle = "#000";
+            signatureContext.fillText("Signed on: " + date, 10, 470);
+            var dataURL = signatureCanvas.toDataURL();
+            var link = document.createElement('a');
+            link.href = dataURL;
+            link.download = 'signature.png';
+            link.click();
+        }
+
+        async function clearSignature() {
+            signatureContext.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+            await wacom.clearScreen();
+        }
+    </script>
+</body>
+</html>

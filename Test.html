@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wacom Signature Capture</title>
-    <script src="wacomstu540.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -77,7 +76,7 @@
                 width: 800,
                 height: 480,
                 scaleFactor: 13.5,
-                pressureFactor: 0.0,
+                pressureFactor: 1023,
                 refreshRate: 0,
                 tabletWidth: 0,
                 tabletHeight: 0,
@@ -189,8 +188,7 @@
         const canvas = document.getElementById('signatureCanvas');
         ctx = canvas.getContext('2d');
         ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-    
+        ctx.lineWidth = 2;
 
         // Check for WebHID support
         if (navigator.hid) {
