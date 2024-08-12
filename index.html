@@ -3,267 +3,116 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wacom Signature Capture</title>
-    <script src="wacomstu540.js"></script>
+    <title>Web Signing with Wacom</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: sans-serif;
             display: flex;
-            flex-direction: column;
-            align-items: center;
             justify-content: center;
+            align-items: center;
             height: 100vh;
             margin: 0;
-            background-color: #f4f4f9;
+            background: linear-gradient(312deg, #364960, #81848c);
         }
-
-        h1 {
-            color: #333;
-            margin-bottom: 20px;
+        #app {
+            background: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px #00000077;
+            text-align: center;
+            width: 850px;
         }
-
-        canvas {
-            border: 2px solid #333;
-            border-radius: 8px;
-            background-color: #fff;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        #signatureBox {
+            width: 800px;
+            height: 480px;
+            border: 2px dashed #ccc;
+            margin: 20px 0;
+            position: relative;
         }
-
-        #controls {
-            margin-top: 20px;
+        #signature {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
         }
-
         button {
-            font-size: 16px;
-            padding: 10px 20px;
-            margin: 0 5px;
-            border: none;
-            border-radius: 5px;
-            background-color: #5a67d8;
-            color: #fff;
+            background: #1e1e1e;
+            border: 1px solid #4c4c4c;
+            padding: 5px 10px;
+            color: #d9d9d9;
+            border-radius: 8px;
             cursor: pointer;
-            transition: background-color 0.3s ease;
-        }
-
-        button:disabled {
-            background-color: #a0aec0;
-            cursor: not-allowed;
-        }
-
-        button:hover:not(:disabled) {
-            background-color: #4c51bf;
+            margin: 3px;
         }
     </style>
 </head>
 <body>
-    <h1>Signature Capture</h1>
-    <canvas id="signatureCanvas" width="800" height="480"></canvas>
-    <div id="controls">
-        <button id="connectDevice">Connect to Wacom Pad</button>
-        <button id="saveSignature" disabled>Save Signature</button>
-        <button id="clearCanvas" disabled>Clear</button>
+    <div id="app">
+        <h1>Web Signing with Wacom</h1>
+        <div id="signatureBox">
+            <canvas id="signature"></canvas>
+        </div>
+        <button onclick="connectToPad()">Connect to Signature Pad</button>
+        <button onclick="saveSignature()">Save Signature</button>
+        <button onclick="clearSignature()">Clear Signature</button>
     </div>
+
+    <script src="wacomstu540&530.js"></script>
     <script>
-        // Wacom STU-540 WebHID Driver
-        function WacomStu540() {
-            if (navigator == null || navigator.hid == null) return null;
+        let wacom = new wacomstu540();
+        let signatureCanvas = document.getElementById('signature');
+        let signatureContext = signatureCanvas.getContext('2d');
 
-            // Device configuration, information and capabilities
-            this.config = {
-                chunkSize: 253,
-                vid: 1386,
-                pid: 168,
-                imageFormat24BGR: 0x04,
-                width: 800,
-                height: 480,
-                scaleFactor: 13.5,
-                pressureFactor: 0.0,
-                refreshRate: 0,
-                tabletWidth: 0,
-                tabletHeight: 0,
-                deviceName: null,
-                firmware: null,
-                eSerial: null,
-                onPenDataCb: null,
-                onHidChangeCb: null,
-            };
+        signatureCanvas.width = 800;
+        signatureCanvas.height = 480;
 
-            this.command = {
-                penData: 0x01,
-                information: 0x08,
-                capability: 0x09,
-                writingMode: 0x0E,
-                eSerial: 0x0F,
-                clearScreen: 0x20,
-                inkMode: 0x21,
-                writeImageStart: 0x25,
-                writeImageData: 0x26,
-                writeImageEnd: 0x27,
-                writingArea: 0x2A,
-                brightness: 0x2B,
-                backgroundColor: 0x2E,
-                penColorAndWidth: 0x2D,
-                penDataTiming: 0x34,
-            };
-
-            this.device = null;
-            this.image = null;
-
-            this.checkAvailable = async function () {
-                if (this.checkConnected()) return true;
-                let devices = await navigator.hid.getDevices();
-                return devices.some(device => device.vendorId === this.config.vid && device.productId === this.config.pid);
-            };
-
-            this.connect = async function () {
-                if (this.checkConnected()) return true;
-                let devices = await navigator.hid.requestDevice({ filters: [{ vendorId: this.config.vid, productId: this.config.pid }] });
-                if (devices.length === 0) return false;
-                this.device = devices[0];
-                await this.device.open();
-
-                this.device.addEventListener("inputreport", (event) => {
-                    if (this.config.onPenDataCb == null) return;
-                    if (event.reportId == this.command.penData || event.reportId == this.command.penDataTiming) {
-                        let packet = {
-                            rdy: (event.data.getUint8(0) & 1) !== 0,
-                            sw: (event.data.getUint8(0) & 2) !== 0,
-                            cx: Math.trunc(event.data.getUint16(2) / this.config.scaleFactor),
-                            cy: Math.trunc(event.data.getUint16(4) / this.config.scaleFactor),
-                            x: event.data.getUint16(2),
-                            y: event.data.getUint16(4),
-                            press: 0,
-                            seq: null,
-                            time: null,
-                        };
-                        packet.press = event.data.getUint16(0) / this.config.pressureFactor;
-                        if (event.reportId == this.command.penDataTiming) {
-                            packet.time = event.data.getUint16(6);
-                            packet.seq = event.data.getUint16(8);
-                        }
-                        this.config.onPenDataCb(packet);
-                    }
-                });
-
-                return true;
-            };
-
-            this.checkConnected = function () {
-                return this.device != null && this.device.opened;
-            };
-
-            this.clearScreen = async function () {
-                if (!this.checkConnected()) return;
-                await this.sendData(this.command.clearScreen, new Uint8Array([0]));
-            };
-
-            this.sendData = async function (reportId, data) {
-                if (!this.checkConnected()) return;
-                await this.device.sendFeatureReport(reportId, data);
-            };
-
-            this.readData = async function (reportId) {
-                if (!this.checkConnected()) return null;
-                return await this.device.receiveFeatureReport(reportId);
-            };
-
-            this.dataViewString = function (dv, offset, length) {
-                let end = typeof length == 'number' ? offset + length : dv.byteLength;
-                let text = '';
-                let val = -1;
-                while (offset < dv.byteLength && offset < end) {
-                    val = dv.getUint8(offset++);
-                    if (val == 0) break;
-                    text += String.fromCharCode(val);
-                }
-                return text;
-            };
-        }
-
-        // Initialize variables
-        let signaturePad;
-        let ctx;
-        let isDrawing = false;
-
-        // Get the canvas and context
-        const canvas = document.getElementById('signatureCanvas');
-        ctx = canvas.getContext('2d');
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-    
-
-        // Check for WebHID support
-        if (navigator.hid) {
-            console.log('WebHID is supported');
-        } else {
-            alert('WebHID is not supported in this browser.');
-            throw new Error('WebHID not supported');
-        }
-
-        // Connect to the Wacom device
-        document.getElementById('connectDevice').addEventListener('click', async () => {
-            try {
-                // Initialize Wacom device
-                signaturePad = new WacomStu540();
-                const available = await signaturePad.checkAvailable();
-                if (!available) {
-                    alert('Wacom STU-540 device not found. Please connect the device and try again.');
-                    return;
-                }
-
-                // Connect to the device
-                const connected = await signaturePad.connect();
-                if (!connected) {
-                    alert('Failed to connect to Wacom device.');
-                    return;
-                }
-
-                // Enable the save and clear buttons and notify the user
-                document.getElementById('saveSignature').disabled = false;
-                document.getElementById('clearCanvas').disabled = false;
-                alert('Connected to Wacom STU-540');
-
-                // Set up pen data callback
-                signaturePad.config.onPenDataCb = (data) => {
-                    if (data.rdy && data.sw) {
-                        if (!isDrawing) {
-                            isDrawing = true;
-                            ctx.beginPath();
-                            ctx.moveTo(data.cx, data.cy);
-                        }
-                        ctx.lineTo(data.cx, data.cy);
-                        ctx.stroke();
-                    } else {
-                        if (isDrawing) {
-                            isDrawing = false;
-                            ctx.closePath();
-                        }
-                    }
-                };
-            } catch (error) {
-                console.error('Error connecting to the Wacom device:', error);
-                alert(`Error: ${error.message}`);
+        async function connectToPad() {
+            let connected = await wacom.connect();
+            if (connected) {
+                wacom.onPenData(drawSignature);
+                alert("Connected to the signature pad successfully.");
+            } else {
+                alert("Failed to connect to the signature pad.");
             }
-        });
+        }
 
-        // Save the signature as an image
-        document.getElementById('saveSignature').addEventListener('click', () => {
-            const link = document.createElement('a');
+        function drawSignature(penData) {
+            if (penData.sw) {
+                signatureContext.lineWidth = 1.5;
+                signatureContext.lineCap = 'round';
+                signatureContext.strokeStyle = '#000000';
+                signatureContext.lineTo(penData.cx, penData.cy);
+                signatureContext.stroke();
+                signatureContext.beginPath();
+                signatureContext.moveTo(penData.cx, penData.cy);
+            } else {
+                signatureContext.beginPath();
+            }
+        }
+
+        function saveSignature() {
+            let date = new Date().toLocaleString();
+            signatureContext.font = "20px Arial";
+            signatureContext.fillStyle = "#000";
+            signatureContext.fillText("Signed on: " + date, 10, 470);
+            let dataURL = signatureCanvas.toDataURL();
+            let link = document.createElement('a');
+            link.href = dataURL;
             link.download = 'signature.png';
-            link.href = canvas.toDataURL();
             link.click();
-        });
+        }
 
-        // Clear the canvas and the Wacom device
-        document.getElementById('clearCanvas').addEventListener('click', async () => {
-            // Clear the canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Clear the Wacom device screen
-            if (signaturePad && signaturePad.clearScreen) {
-                await signaturePad.clearScreen();
+        async function clearSignature() {
+            signatureContext.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+            if (typeof wacom.clearScreen === 'function') {
+                await wacom.clearScreen(); // Clear the signature pad
+            } else {
+                console.error("clearScreen function is not available on the wacom instance.");
             }
-        });
+        }
+
+        document.getElementById('signatureBox').addEventListener('mousedown', connectToPad);
     </script>
 </body>
 </html>
